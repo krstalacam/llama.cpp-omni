@@ -1283,6 +1283,10 @@ VoxCPM2DecodeStepResult VoxCPM2Runtime::decode_step(const std::vector<float> &  
 void VoxCPM2Runtime::decode_loop(const VoxCPM2GenerateParams &                                params,
                                  const std::function<void(const VoxCPM2DecodeStepResult &)> & callback) {
     for (int i = 0; i < params.max_steps; ++i) {
+        if (params.cancelled && params.cancelled()) {
+            fail("cancelled");
+            break;
+        }
         VoxCPM2DecodeStepResult step = decode_step(params);
         if (step.latent_patch.empty()) {
             break;

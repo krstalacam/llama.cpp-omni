@@ -175,6 +175,10 @@ static std::vector<float> voxcpm2_load_wav_from_memory(const std::vector<uint8_t
 struct voxcpm2_server_state {
     VoxCPM2Runtime * runtime = nullptr;
     std::mutex mutex;
+    // One generation at a time: the runtime keeps a single KV cache and output pool, and httplib runs every
+    // request on its own thread, so two at once mixed their positions ("inconsistent sequence positions")
+    // and crashed the server. A request that comes during another one waits for it.
+    std::mutex generate_mutex;
 };
 
 // ─── Static signal handling ───────────────────────────────────────────────
@@ -264,6 +268,7 @@ int main(int argc, char ** argv) {
         }
 
         {
+            std::lock_guard<std::mutex> generating(state.generate_mutex);
             std::lock_guard<std::mutex> lock(state.mutex);
             if (state.runtime) {
                 state.runtime->free();
@@ -339,6 +344,10 @@ int main(int argc, char ** argv) {
         if (prompt_text.empty()) prompt_text = json_value(data, "reference_text", std::string(""));
         if (prompt_text.empty()) prompt_text = json_value(data, "ref_text", std::string(""));
 
+        std::lock_guard<std::mutex> generating(state.generate_mutex);
+        // The answer goes out only at the end: without this a hung-up request still ran to its last step.
+        gen_params.cancelled = [&req]() { return req.is_connection_closed(); };
+
         std::vector<float> wav;
         if (data.contains("reference_audio") && data.at("reference_audio").is_string()) {
             std::string ref_b64 = data.at("reference_audio").get<std::string>();
@@ -365,6 +374,11 @@ int main(int argc, char ** argv) {
             wav = rt->generate(input, gen_params);
         }
 
+        if (wav.empty() && rt->last_error() == "cancelled") {
+            LOG_INF("client hung up; generation stopped
+");
+            return;
+        }
         if (wav.empty()) {
             res_error(res, format_error_response("VoxCPM2 generation failed: " + rt->last_error(), "server_error"));
             return;
@@ -420,7 +434,8 @@ int main(int argc, char ** argv) {
 
         res.set_chunked_content_provider(
             "audio/wav",
-            [rt, input, gen_params, sr, data](size_t /*offset*/, httplib::DataSink & sink) -> bool {
+            [&state, rt, input, gen_params, sr, data](size_t /*offset*/, httplib::DataSink & sink) -> bool {
+                std::lock_guard<std::mutex> generating(state.generate_mutex);
                 // Write WAV header first (with unknown data size)
                 {
                     std::string header;

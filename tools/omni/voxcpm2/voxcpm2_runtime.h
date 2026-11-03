@@ -33,6 +33,9 @@ struct VoxCPM2GenerateParams {
     uint32_t seed                  = 0;
     bool     stop_on_predictor     = true;
     bool     append_audio_start    = true;
+    // Asked before every decode step of a whole-waveform generate_*: true stops it (e.g. the HTTP client
+    // hung up), and the call fails with "cancelled" instead of finishing audio nobody will receive.
+    std::function<bool()> cancelled;
 };
 
 struct VoxCPM2PrefillInputs {
