@@ -28,6 +28,12 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+struct iovec {
+    void * iov_base;
+    size_t iov_len;
+};
 #else
 #include <fcntl.h>
 #include <sys/uio.h>
