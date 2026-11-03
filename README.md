@@ -1,3 +1,16 @@
+> **About this fork.** This is [tc-mb/llama.cpp-omni](https://github.com/tc-mb/llama.cpp-omni) with a few changes
+> for [Orion](https://github.com/orion-ai-assistant/orion-ai-assistant), which uses its `llama-tts-server` to run
+> VoxCPM2 text-to-speech without PyTorch. The changes are on the **`orion`** branch, on top of upstream `d30f00f`:
+>
+> - **Builds with MSVC on Windows:** `ssize_t` and `struct iovec` are defined where Windows lacks them.
+> - **VoxCPM2 server, one generation at a time:** two requests arriving together (for example one right after a
+>   cancelled stream) shared the KV cache and could crash the server; requests now take turns.
+> - **A whole-waveform `/v1/audio/speech` request stops when its client hangs up.**
+>
+> Audio output is byte-for-byte the same as upstream. Orion publishes Windows builds (CUDA, Vulkan, CPU) of
+> `llama-tts-server` from this branch as release assets of the Orion repository (`voxcpm2-v*` tags). The `master`
+> branch follows upstream unchanged. Everything below is the upstream README.
+
 # llama.cpp-omni
 
 **llama.cpp-omni** is a high-performance Omni multimodal inference engine built on [llama.cpp](https://github.com/ggml-org/llama.cpp).
