@@ -119,6 +119,12 @@ struct VoxCPM2Runtime {
     std::vector<float>              residual_input_history;
     std::vector<std::vector<float>> output_pool;
 
+    // AudioVAE-encoded reference / prompt audio, kept by a hash of the samples (newest last, at most
+    // kReferenceCacheSize). A client that sends the same reference every request (Orion's fixed warm-up voice)
+    // pays the encode once instead of per request.
+    static constexpr size_t kReferenceCacheSize = 8;
+    std::vector<std::pair<uint64_t, std::vector<float>>> reference_cache;
+
     int current_position  = 0;
     int audio_frame_count = 0;
 

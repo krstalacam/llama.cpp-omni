@@ -375,8 +375,7 @@ int main(int argc, char ** argv) {
         }
 
         if (wav.empty() && rt->last_error() == "cancelled") {
-            LOG_INF("client hung up; generation stopped
-");
+            LOG_INF("client hung up; generation stopped\n");
             return;
         }
         if (wav.empty()) {

@@ -8,6 +8,7 @@
 #define GGML_KQ_MASK_PAD 256
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -1474,6 +1475,26 @@ std::vector<float> VoxCPM2Runtime::encode_reference_audio(const std::vector<floa
     }
 
     const int          actual_sample_rate = sample_rate > 0 ? sample_rate : audio_vae.config.sample_rate;
+
+    // Same audio as an earlier request: hand back what the encoder made then.
+    uint64_t key = 1469598103934665603ULL ^ static_cast<uint64_t>(actual_sample_rate);
+    for (const float s : reference_wav) {
+        uint32_t bits;
+        std::memcpy(&bits, &s, sizeof(bits));
+        key = (key ^ bits) * 1099511628211ULL;
+    }
+    key ^= static_cast<uint64_t>(reference_wav.size());
+    for (size_t i = 0; i < reference_cache.size(); ++i) {
+        if (reference_cache[i].first == key) {
+            auto hit = std::move(reference_cache[i]);
+            reference_cache.erase(reference_cache.begin() + static_cast<std::ptrdiff_t>(i));
+            reference_cache.push_back(std::move(hit));
+            LOG_INF("VoxCPM2Runtime: reference audio from cache (%zu samples)\n", reference_wav.size());
+            return reference_cache.back().second;
+        }
+    }
+    const auto encode_start = std::chrono::steady_clock::now();
+
     std::vector<float> audio = resample_mono_linear(reference_wav, actual_sample_rate, audio_vae.config.sample_rate);
     const int          audio_patch_len = patch_size() * audio_vae.config.hop_length();
     if (audio_patch_len <= 0) {
@@ -1538,6 +1559,14 @@ std::vector<float> VoxCPM2Runtime::encode_reference_audio(const std::vector<floa
 
     auto result = tensor_to_vector(patch_major);
     ggml_gallocr_free(galloc);
+    reference_cache.emplace_back(key, result);
+    if (reference_cache.size() > kReferenceCacheSize) {
+        reference_cache.erase(reference_cache.begin());
+    }
+    LOG_INF("VoxCPM2Runtime: reference audio encoded in %lld ms (%zu samples)\n",
+            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::steady_clock::now() - encode_start).count()),
+            reference_wav.size());
     return result;
 }
 
@@ -2015,6 +2044,7 @@ bool VoxCPM2Runtime::generate_with_continuation_streaming(const std::string &   
 }
 
 void VoxCPM2Runtime::free() {
+    reference_cache.clear();
     cached_front_half.free_graph();
     reset_state();
     audio_vae.free();
