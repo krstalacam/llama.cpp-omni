@@ -595,6 +595,7 @@ struct common_params {
     std::string voxcpm2_base_lm      = ""; // VoxCPM2 BaseLM GGUF path
     std::string voxcpm2_acoustic     = ""; // VoxCPM2 Acoustic GGUF path
     int         voxcpm2_n_gpu_layers = -1; // GPU layers for VoxCPM2 (-1 = all)
+    int         voxcpm2_ctx          = 2048; // KV cache positions for VoxCPM2 (BaseLM and ResidualLM), per request
 
     // Apple Neural Engine (CoreML) support
     std::string vision_coreml_model_path     = ""; // path to CoreML .mlmodelc for vision ANE

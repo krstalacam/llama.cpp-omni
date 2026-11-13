@@ -369,7 +369,7 @@ VoxCPM2ResidualLM::~VoxCPM2ResidualLM() {
     free();
 }
 
-bool VoxCPM2ResidualLM::init_from_gguf(const std::string & path, ggml_backend_t backend_in) {
+bool VoxCPM2ResidualLM::init_from_gguf(const std::string & path, ggml_backend_t backend_in, int max_length) {
     free();
     if (!backend_in) {
         LOG_ERR("VoxCPM2ResidualLM: backend is null\n");
@@ -388,7 +388,7 @@ bool VoxCPM2ResidualLM::init_from_gguf(const std::string & path, ggml_backend_t 
     config.n_heads        = 16;
     config.n_kv_heads     = 2;
     config.head_dim       = config.hidden_size / config.n_heads;
-    config.max_length     = 32768;
+    config.max_length     = max_length;
     config.use_flash_attn = false;
 
     // Read no_rope from GGUF metadata; default to false for v0.5/v1.5 models
@@ -623,9 +623,14 @@ void VoxCPM2Runtime::clear_error() {
 bool VoxCPM2Runtime::init(const std::string & base_lm_path,
                           const std::string & acoustic_path,
                           int                 n_gpu_layers,
-                          bool                use_gpu_backend) {
+                          bool                use_gpu_backend,
+                          int                 n_ctx) {
     free();
     clear_error();
+    if (n_ctx < 64) {
+        return fail("VoxCPM2 context must be at least 64 positions");
+    }
+    ctx_positions = n_ctx;
 
     ggml_backend_load_all();
 
@@ -644,7 +649,7 @@ bool VoxCPM2Runtime::init(const std::string & base_lm_path,
 
     LOG_INF("VoxCPM2Runtime: custom component backend=%s\n", ggml_backend_name(backend));
 
-    if (!base_lm.init(base_lm_path, n_gpu_layers)) {
+    if (!base_lm.init(base_lm_path, n_gpu_layers, n_ctx)) {
         return fail("failed to initialize BaseLM");
     }
     if (!token_embeddings.load(base_lm_path)) {
@@ -665,7 +670,7 @@ bool VoxCPM2Runtime::init(const std::string & base_lm_path,
     if (!fsq.init_from_gguf(acoustic_path, backend)) {
         return fail("failed to initialize FSQ");
     }
-    if (!residual_lm.init_from_gguf(acoustic_path, backend)) {
+    if (!residual_lm.init_from_gguf(acoustic_path, backend, n_ctx)) {
         return fail("failed to initialize ResidualLM");
     }
     if (!loc_enc.init_from_gguf(acoustic_path, backend)) {
@@ -689,7 +694,7 @@ bool VoxCPM2Runtime::init(const std::string & base_lm_path,
 
     is_initialized = true;
     reset_state();
-    LOG_INF("VoxCPM2Runtime: initialized (embedding_scale=%.3f)\n", embedding_scale);
+    LOG_INF("VoxCPM2Runtime: initialized (embedding_scale=%.3f, ctx=%d positions)\n", embedding_scale, ctx_positions);
     return true;
 }
 
@@ -836,6 +841,11 @@ bool VoxCPM2Runtime::prefill(const VoxCPM2PrefillInputs & inputs) {
     }
     if (text_mask.size() != static_cast<size_t>(seq_len) || feat_mask.size() != static_cast<size_t>(seq_len)) {
         return fail("prefill mask sizes must match token_ids");
+    }
+
+    if (seq_len >= ctx_positions) {
+        return fail("request too long: prompt (text + reference audio) needs " + std::to_string(seq_len) +
+                    " positions, the context holds " + std::to_string(ctx_positions) + " (--voxcpm2-ctx)");
     }
 
     const bool has_feat = std::any_of(feat_mask.begin(), feat_mask.end(), [](int32_t v) { return v != 0; });
@@ -1228,6 +1238,11 @@ VoxCPM2DecodeStepResult VoxCPM2Runtime::decode_step(const std::vector<float> &  
         fail("decode_step requires initialized runtime and successful prefill");
         return result;
     }
+    if (current_position >= ctx_positions) {
+        fail("request too long: generation reached the end of the context (" + std::to_string(ctx_positions) +
+             " positions, --voxcpm2-ctx)");
+        return result;
+    }
 
     if (!run_decode_front_half(noise, params, result)) {
         return result;
@@ -1299,6 +1314,7 @@ void VoxCPM2Runtime::decode_loop(const VoxCPM2GenerateParams &                  
             break;
         }
     }
+    LOG_INF("VoxCPM2: request uses %d of %d positions\n", current_position, ctx_positions);
 }
 
 std::vector<float> VoxCPM2Runtime::decode_pool_range_to_waveform(int start_patch, int end_patch, int target_sr) {
@@ -1936,6 +1952,7 @@ bool VoxCPM2Runtime::decode_streaming_from_ready_state(const VoxCPM2GeneratePara
         }
     }
 
+    LOG_INF("VoxCPM2: request uses %d of %d positions\n", current_position, ctx_positions);
     if (!last_error_msg.empty()) {
         return false;
     }

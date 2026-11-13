@@ -89,7 +89,7 @@ struct VoxCPM2ResidualLM {
     VoxCPM2ResidualLM(VoxCPM2ResidualLM &&)                  = delete;
     VoxCPM2ResidualLM & operator=(VoxCPM2ResidualLM &&)      = delete;
 
-    bool               init_from_gguf(const std::string & path, ggml_backend_t backend);
+    bool               init_from_gguf(const std::string & path, ggml_backend_t backend, int max_length = 2048);
     // Full-sequence forward (no KV cache)
     std::vector<float> forward(const std::vector<float> & input, int seq_len) const;
     std::vector<float> forward_last(const std::vector<float> & input, int seq_len) const;
@@ -126,6 +126,7 @@ struct VoxCPM2Runtime {
     std::vector<std::pair<uint64_t, std::vector<float>>> reference_cache;
 
     int current_position  = 0;
+    int ctx_positions     = 2048; // KV cache size of BaseLM and ResidualLM (set by init)
     int audio_frame_count = 0;
 
     VoxCPM2Runtime();
@@ -139,7 +140,8 @@ struct VoxCPM2Runtime {
     bool init(const std::string & base_lm_path,
               const std::string & acoustic_path,
               int                 n_gpu_layers    = -1,
-              bool                use_gpu_backend = true);
+              bool                use_gpu_backend = true,
+              int                 n_ctx           = 2048);
 
     bool prefill(const VoxCPM2PrefillInputs & inputs);
     bool prefill_tokens(const std::vector<int32_t> & token_ids);

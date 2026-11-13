@@ -42,7 +42,7 @@ struct MiniCPMLM {
      * @param path       GGUF file path (LLM_ARCH_MINICPM format)
      * @param n_gpu_layers  GPU offload layers (-1 = all)
      */
-    bool init(const std::string & path, int n_gpu_layers = -1);
+    bool init(const std::string & path, int n_gpu_layers = -1, int n_ctx = 2048);
 
     /**
      * Prefill: feed a batch of embedding tokens into the model.

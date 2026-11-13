@@ -2754,6 +2754,13 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_VOXCPM2_N_GPU_LAYERS"));
     add_opt(common_arg(
+        {"--voxcpm2-ctx"}, "N",
+        "KV cache positions for VoxCPM2, allocated up front (default: 2048); a request needs text tokens + reference audio patches + generated steps",
+        [](common_params & params, int value) {
+            params.voxcpm2_ctx = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_VOXCPM2_CTX"));
+    add_opt(common_arg(
         {"-hft", "--hf-token"}, "TOKEN",
         "Hugging Face access token (default: value from HF_TOKEN environment variable)",
         [](common_params & params, const std::string & value) {

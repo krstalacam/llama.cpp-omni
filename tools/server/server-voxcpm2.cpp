@@ -277,7 +277,7 @@ int main(int argc, char ** argv) {
             }
 
             auto * rt = new VoxCPM2Runtime();
-            if (!rt->init(base_lm, acoustic, n_gpu_layers, /*use_gpu_backend=*/true)) {
+            if (!rt->init(base_lm, acoustic, n_gpu_layers, /*use_gpu_backend=*/true, json_value(data, "n_ctx", 2048))) {
                 std::string err = rt->last_error();
                 rt->free();
                 delete rt;
@@ -539,7 +539,7 @@ int main(int argc, char ** argv) {
 
     {
         auto * rt = new VoxCPM2Runtime();
-        if (!rt->init(params.voxcpm2_base_lm, params.voxcpm2_acoustic, params.voxcpm2_n_gpu_layers, /*use_gpu_backend=*/true)) {
+        if (!rt->init(params.voxcpm2_base_lm, params.voxcpm2_acoustic, params.voxcpm2_n_gpu_layers, /*use_gpu_backend=*/true, params.voxcpm2_ctx)) {
             LOG_ERR("VoxCPM2 init failed: %s\n", rt->last_error().c_str());
             rt->free();
             delete rt;
