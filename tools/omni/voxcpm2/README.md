@@ -352,3 +352,17 @@ Load or reload VoxCPM2 runtime dynamically.
 #### `GET /v1/audio/speech/models`
 
 List loaded VoxCPM2 model info.
+
+## Orion fork changes
+
+Changes on the `orion` branch (on top of upstream `d30f00f`) for [Orion](https://github.com/orion-ai-assistant/orion-ai-assistant), which ships `llama-tts-server` for Windows (CUDA, Vulkan, CPU).
+
+- **MSVC build** (`src/llama-moe-slot.cpp`): it used POSIX `ssize_t` and `struct iovec`; both are now defined on Windows. Nothing to configure.
+- **One generation at a time** (`server-voxcpm2.cpp`, `generate_mutex`): the runtime has a single KV cache, so two concurrent requests used to corrupt it and crash the server. Requests now queue on the mutex.
+- **Stops when the client hangs up**: a non-streaming `/v1/audio/speech` request is cancelled when the client disconnects (`VoxCPM2GenerateParams::cancelled`, checked by `decode_loop` every step), so an abandoned request does not keep the GPU busy.
+- **Reference audio encoding cache**: `encode_reference_audio` keeps the AudioVAE encoding of a reference sample, keyed by a hash of the samples (at most 8 entries). Sending the same `reference_audio` with every request encodes it once.
+- **`--voxcpm2-ctx N`** (env `LLAMA_ARG_VOXCPM2_CTX`, `n_ctx` in `POST /v1/voxcpm2/init`; default 2048): number of KV cache positions, shared by BaseLM (llama context) and ResidualLM. It used to be a hard-coded 32768, ~1.1 GB allocated up front. One request needs text tokens + reference audio patches + generated steps, and every request starts with `reset_state()`, so nothing carries over. The server's `max_steps` is 200, and measured use is 38 positions for 30 characters, 313-356 for 300 and 490-510 for 600 (Vulkan), so 2048 leaves a wide margin. Output is byte-identical to 32768 for the same text and seed. Each request logs `VoxCPM2: request uses N of M positions`.
+- **Too-long requests fail cleanly**: if the prompt, or the prompt plus generated steps, would pass the limit, `prefill` / `decode_step` call `fail("request too long ...")` and the HTTP request returns an error instead of overrunning the cache. Raise `--voxcpm2-ctx` for longer inputs.
+- **`--voxcpm2-n-gpu-layers N`** (env `LLAMA_ARG_VOXCPM2_N_GPU_LAYERS`, default -1 = all): BaseLM layers offloaded to the GPU. Fewer layers means less VRAM; measured fastest on an 8 GB card with 7 of 28.
+
+Known issue (not fixed): a request body that is not valid UTF-8 (for example Turkish text sent with a non-UTF-8 `curl` command line) crashes the server. Send UTF-8 JSON.
